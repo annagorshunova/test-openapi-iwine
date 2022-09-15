@@ -6,4 +6,4 @@
 
 `yarn install`
 
-`yarn build iWine.yaml --options.theme.colors.primary.main=orange --output ./build/index.html`
+`yarn build iWine.yaml --options.theme.colors.primary.main=orange --output ./docs/index.html`
