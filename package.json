@@ -1,0 +1,10 @@
+{
+	"version": "0.1.0",
+	"private": true,
+	"dependencies": {
+		"redoc-cli": "^0.13.20"
+	},
+	"scripts": {
+		"build": "redoc-cli build"
+	}
+}

@@ -1,0 +1,546 @@
+openapi: 3.0.3
+info:
+  title: Графин iWine — OpenAPI 3.0
+  version: 1.0.0
+  description: >-
+    Это спецификация API для "умного" графина iWine, соответствующая стандарту OpenAPI 3.0.
+
+    # Общая информация
+
+    Графин предоставляет API, с&nbsp;помощью которого можно получать информацию о&nbsp;содержимом графина и&nbsp;управлять следующими операциями: охладить или нагреть вино до&nbsp;определенной температуры; взболтать вино для насыщения его воздухом.
+
+    # Доступ к API
+
+    ## Подключение
+
+    Взаимодействие с&nbsp;API графина осуществляется по&nbsp;протоколу HTTP. Доступ к&nbsp;API возможен с&nbsp;устройства, находящегося той&nbsp;же локальной сети. Для подключения к&nbsp;графину необходимо знать его IP-адрес. IP-адрес можно посмотреть в&nbsp;панели управления роутера, MAC-адрес графина указан на&nbsp;наклейке в&nbsp;нижней части корпуса. Если ваше устройство поддерживает протокол mDNS, то&nbsp;вместо IP-адреса можно использовать mDNS, URL при этом будет выглядеть следующим образом: iWine-XXXXXXXX.local, где ХХХХХХХХ&nbsp;&mdash; восьмизначный серийный номер графина (см. наклейку в&nbsp;нижней части корпуса).
+
+    ## Аутентификация
+
+    Методы API доступны только после успешного прохождения аутентификации. По&nbsp;умолчанию для аутентификации используется базовая схема (Basic HTTP). Параметры подключения&nbsp;&mdash; имя пользователя и&nbsp;пароль&nbsp;&mdash; указаны на&nbsp;этикетке в&nbsp;нижней части корпуса графина. Пароль можно изменить с помощью API. Для сброса пароля к&nbsp;заводским настройкам следует нажать и&nbsp;удерживать в&nbsp;течение 3&nbsp;секунд кнопку *reset* на&nbsp;корпусе графина.
+
+    # Обмен данными
+
+    ## Формат запроса и ответа
+
+    Если не&nbsp;указано иное, данные запроса и&nbsp;ответа передаются в&nbsp;формате application/json. Методы, связанные с&nbsp;обработкой длительных процессов, возвращают числовой код и&nbsp;текстовое сообщение.
+
+
+    Все поля запросов и ответов всех методов, представленных в данном API, являются обязательными.
+
+    ## Обработка ошибок
+
+    По&nbsp;умолчанию при возникновении ошибки, помимо кода состояния HTTP, в&nbsp;ответе передается внутренний числовой код и&nbsp;текстовое сообщение об&nbsp;ошибке.
+
+    ## Коды состояния процессов
+
+    В&nbsp;ответах методов API для передачи информации о&nbsp;состоянии процессов выполнения операций используются следующие коды:
+
+    * -1 — процесс не запущен;
+
+    * 0 — процесс успешно завершен;
+
+    * 1 — процесс запущен;
+
+    * 2 и последующие положительные целочисленные коды — ошибки выполнения процесса.
+
+servers:
+  - url: http://localhost:8090
+    variables: {}
+paths:
+  /state:
+    summary: Информация о содержимом графина и набор доступных операций
+    get:
+      summary: Получить параметры вина
+      description: Позволяет получить информацию о налитом в графин вине.
+      operationId: getState
+      responses:
+        '200':
+          description: Успешное выполнение
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Wine'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /temperature:
+    post:
+      summary: Изменить температуру
+      description: >-
+        Запускает процесс изменения температуры вина: охлаждение или нагрев. Диапазон доступных значений температуры: от&nbsp;6&nbsp;до&nbsp;70&deg;C&nbsp;с шагом 1&deg;C. В&nbsp;ответе возвращается URI для отслеживания состояния процесса (/temperature/process). Можно запустить только один процесс изменения температуры. Для запуска следующего процесса необходимо дождаться завершения уже запущенного процесса или отменить его.
+      operationId: setTemperature
+      requestBody:
+        description: Целевая температура вина
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                goal:
+                  type: integer
+                  format: int32
+                  example: 8
+                  description: Целевая температура вина
+      responses:
+        '202':
+          description: Процесс изменения температуры запущен
+          headers:
+            Location:
+              schema:
+                type: string
+                enum:
+                  - /temperature/process
+              description: URI для запроса состояния
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current:
+                    type: integer
+                    format: int32
+                    example: 20
+                    description: Текущая температура вина
+                  goal:
+                    type: integer
+                    format: int32
+                    example: 8
+                    description: Целевая температура вина
+                  result_uri:
+                    type: string
+                    example: /temperature/process
+                    description: URI для отслеживания состояния процесса
+                  process_id:
+                    type: string
+                    example: process
+                    description: ID процесса
+        '400':
+          description: Некорректное значение температуры
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '409':
+          $ref: '#/components/responses/ProcessNotFinished'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /temperature/process:
+    get:
+      summary: Проверить изменение температуры
+      description: >-
+        Позволяет получить информацию о&nbsp;состоянии процесса изменения температуры. По&nbsp;завершении процесса при обращении к&nbsp;ресурсу возвращается URI, по&nbsp;которому можно получить результат (/temperature/result).
+      operationId: getTemperatureProcessState
+      responses:
+        '200':
+          description: Успешное получение информации о состоянии процесса
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current:
+                    type: integer
+                    format: int32
+                    example: 15
+                    description: Текущая температура вина
+                  goal:
+                    type: integer
+                    format: int32
+                    example: 8
+                    description: Целевая температура вина
+        '302':
+          description: Процесс завершен
+          headers:
+            Location:
+              schema:
+                type: string
+                enum:
+                  - /temperature/result
+              description: URI результата выполнения
+        '404':
+          $ref: '#/components/responses/ProcessNotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      summary: Остановить изменение температуры
+      description: Позволяет прервать запущенный процесс изменения температуры.
+      operationId: stopTemperatureProcess
+      responses:
+        '200':
+          description: Успешное выполнение запроса
+          content:
+            application/json:
+              schema:
+                properties:
+                  current:
+                    type: integer
+                    format: int32
+                    example: 10
+                    description: Текущая температура вина
+                  goal:
+                    type: integer
+                    format: int32
+                    example: 8
+                    description: Целевая температура вина
+        '404':
+          $ref: '#/components/responses/ProcessNotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /temperature/result:
+    get:
+      summary: Получить результат изменения температуры
+      description: >-
+        Позволяет получить информацию о&nbsp;результате процесса изменения температуры. В&nbsp;случае неуспешного завершения процесса возвращает код ошибки и&nbsp;текстовое сообщение о&nbsp;вероятных причинах сбоя.
+      operationId: getTemperatureProcessResult
+      responses:
+        '200':
+          description: Успешное завершение процесса
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    type: integer
+                    format: int32
+                    enum:
+                      - 0
+                    description: 0 — код успешного завершения процесса
+                  message:
+                    type: string
+                    example: Температура успешно изменена
+                    description: Сообщение об успешном завершении процесса
+                  result:
+                    type: object
+                    properties:
+                      current:
+                        type: integer
+                        format: int32
+                        example: 8
+                        description: Текущая температура вина
+                      goal:
+                        type: integer
+                        format: int32
+                        example: 8
+                        description: Целевая температура вина
+        '404':
+          $ref: '#/components/responses/ProcessNotFound'
+        '409':
+          $ref: '#/components/responses/ProcessNotFinished'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '501':
+          description: Ошибка во время выполнения процесса
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    type: integer
+                    format: int32
+                    example: 2
+                    description: 2 и более — код ошибки выполнения процесса
+                  message:
+                    type: string
+                    example: >-
+                      Аппаратный сбой. Переданное значение температуры не
+                      достигнуто
+                    description: Текст сообщения об ошибке
+                  result:
+                    type: object
+                    properties:
+                      current:
+                        type: integer
+                        format: int32
+                        example: 10
+                        description: Текущая температура вина
+                      goal:
+                        type: integer
+                        format: int32
+                        example: 8
+                        description: Целевая температура вина
+  /decanting:
+    post:
+      summary: Взболтать вино
+      description: >-
+        Инициирует процесс взбалтывания вина для насыщения его воздухом. Длительность процесса составляет 5&nbsp;минут. В&nbsp;ответе возвращается URI для отслеживания состояния процесса (/decanting/process). Можно запустить только один процесс взбалтывания. Для запуска следующего процесса необходимо дождаться завершения уже запущенного процесса или отменить его.
+      operationId: startDecantingProcess
+      responses:
+        '202':
+          description: Процесс взбалтывания запущен
+          headers:
+            Location:
+              schema:
+                type: string
+                enum:
+                  - /decanting/process
+              description: URI для запроса состояния
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  duration:
+                    type: integer
+                    format: int32
+                    example: 0
+                    description: Длительность процесса взбалтывания, мин (при запуске — 0)
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '409':
+          $ref: '#/components/responses/ProcessNotFinished'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /decanting/process:
+    get:
+      summary: Проверить взбалтывание вина
+      description: >-
+        Позволяет получить информацию о&nbsp;состоянии процесса взбалтывания вина. Возвращает количество минут, прошедшее с&nbsp;момента запуска. По&nbsp;завершении процесса при обращении к&nbsp;ресурсу возвращается URI, по&nbsp;которому можно получить результат (/decanting/result).
+      operationId: getDecantingProcessState
+      responses:
+        '200':
+          description: Успешное получение информации о состоянии процесса.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  duration:
+                    type: integer
+                    format: int32
+                    example: 2
+                    description: Длительность процесса взбалтывания, мин
+        '302':
+          description: Процесс завершен
+          headers:
+            Location:
+              schema:
+                type: string
+                enum:
+                  - /decanting/result
+              description: URI результата выполнения
+        '404':
+          $ref: '#/components/responses/ProcessNotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      summary: Остановить взбалтывание
+      description: >-
+        Позволяет прервать запущенный процесс взбалтывания вина. Возвращает время в&nbsp;минутах, прошедшее с&nbsp;момента запуска.
+      operationId: stopDecantingProcess
+      responses:
+        '200':
+          description: Успешное выполнение запроса
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  duration:
+                    type: integer
+                    format: int32
+                    example: 3
+                    description: Длительность процесса взбалтывания, мин
+        '404':
+          $ref: '#/components/responses/ProcessNotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /decanting/result:
+    get:
+      summary: Получить результат процесса взбалтывания
+      description: >-
+        Позволяет получить информацию о&nbsp;результате процесса взбалтывания вина. В&nbsp;случае неуспешного завершения процесса возвращает код ошибки и&nbsp;текстовое сообщение о&nbsp;вероятных причинах сбоя.
+      operationId: getDecantingProcessResult
+      responses:
+        '200':
+          description: Успешное завершение процесса
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    type: integer
+                    format: int32
+                    enum:
+                      - 0
+                    description: 0 — код успешного завершения процесса
+                  message:
+                    type: string
+                    example: Взбалтывание успешно завершено
+                    description: Сообщение об успешном завершении процесса
+                  result:
+                    type: object
+                    properties:
+                      duration:
+                        type: integer
+                        format: int32
+                        example: 5
+                        description: Длительность процесса взбалтывания, мин
+        '404':
+          $ref: '#/components/responses/ProcessNotFound'
+        '409':
+          $ref: '#/components/responses/ProcessNotFinished'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '501':
+          description: Ошибка во время выполнения процесса
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    type: integer
+                    format: int32
+                    example: 2
+                    description: 2 и более — код ошибки выполнения процесса
+                  message:
+                    type: string
+                    example: Аппаратный сбой. Процесс взбалтывания завершился досрочно
+                    description: Текст сообщения об ошибке
+                  result:
+                    type: object
+                    properties:
+                      duration:
+                        type: integer
+                        format: int32
+                        example: 4
+                        description: Длительность процесса взбалтывания, мин
+  /user:
+    put:
+      security: []
+      summary: Изменить пароль
+      description: Позволяет установить новый пароль.
+      operationId: setPassword
+      requestBody:
+        description: Данные для изменения параметров аутентификации
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  example: username
+                  description: Имя пользователя
+                old_password:
+                  type: string
+                  example: oldpassword123
+                  description: Текущий пароль
+                new_password:
+                  type: string
+                  example: newpassword321
+                  description: Новый пароль
+      responses:
+        '200':
+          description: Пароль успешно изменен
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /about:
+    get:
+      security: []
+      summary: Познакомиться
+      description: Информация об устройстве
+      responses:
+        '418':
+          description: Я чайник
+components:
+  schemas:
+    Wine:
+      type: object
+      properties:
+        volume:
+          type: integer
+          format: int32
+          example: 750
+          description: Объем содержимого графина, мл
+        alcohol:
+          type: number
+          format: float32
+          example: 12
+          description: Содержание алкоголя, %
+        sugar:
+          type: integer
+          format: int32
+          example: 8
+          description: Содержание сахара, г/л
+        temperature:
+          type: integer
+          format: int32
+          example: 8
+          description: Температура содержимого, &deg;C
+        style:
+          $ref: '#/components/schemas/Style'
+    Style:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+          example: 2
+          description: Код типа вина
+        name:
+          type: string
+          format: string
+          example: Белое
+          description: Наименование типа вина
+        precision:
+          type: number
+          format: float32
+          example: 0.9
+          description: Коэффициент достоверности
+  responses:
+    ProcessNotFound:
+      description: Процесс сейчас не запущен
+      content:
+        application/json:
+          schema:
+            properties:
+              code:
+                type: integer
+                format: int32
+                enum:
+                  - -1
+                description: -1 — код отсутствия запущенного процесса
+              message:
+                type: string
+                example: Процесс сейчас не запущен
+                description: Сообщение о том, что процесс не запущен
+    ProcessNotFinished:
+      description: Процесс запущен, но не завершен
+      content:
+        application/json:
+          schema:
+            properties:
+              code:
+                type: integer
+                format: int32
+                enum:
+                  - 1
+                description: 1 — код запущенного процесса
+              message:
+                type: string
+                example: Процесс запущен
+                description: Сообщение о том, что процесс запущен, но не завершен
+    InternalServerError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            properties:
+              code:
+                type: integer
+                format: int32
+                example: 10
+                description: >-
+                  Внутренний код ошибки для записи в&nbsp;лог или обращения в&nbsp;техподдержку
+              message:
+                type: string
+                example: Внутренняя ошибка сервера
+                description: Текст сообщения об ошибке
+    UnauthorizedError:
+      description: Ошибка авторизации
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+security:
+  - basicAuth: []
